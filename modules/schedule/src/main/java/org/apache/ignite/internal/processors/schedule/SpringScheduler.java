@@ -24,11 +24,11 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.ignite.IgniteException;
+import org.apache.ignite.internal.processors.schedule.spring.IgniteCronTrigger;
 import org.apache.ignite.internal.util.tostring.GridToStringExclude;
 import org.springframework.core.task.TaskRejectedException;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.scheduling.support.CronSequenceGenerator;
-import org.springframework.scheduling.support.CronTrigger;
 
 /**
  * Delegates scheduling to Spring {@link ThreadPoolTaskScheduler}
@@ -71,11 +71,9 @@ public class SpringScheduler {
      * @throws IgniteException if cron expression is not valid or
      * if the given task was not accepted for internal reasons (e.g. a pool overload handling policy or a pool shutdown in progress)
      */
-    public Integer schedule(CronExpression cron, Runnable run) throws IgniteException {
+    public Integer schedule(IgniteCronTrigger cron, Runnable run) throws IgniteException {
         try {
-            CronTrigger trigger = new CronTrigger(cron.getCron());
-
-            ScheduledFuture<?> fut = taskScheduler.schedule(run, trigger);
+            ScheduledFuture<?> fut = taskScheduler.schedule(run, cron.cronTrigger());
 
             Integer id = cntr.incrementAndGet();
 
@@ -104,11 +102,11 @@ public class SpringScheduler {
      * @return array long[cnt] of the next execition times in milliseconds
      * @throws IgniteException if cron expression is not valid
      */
-    public long[] getNextExecutionTimes(CronExpression cron, int cnt, long start) throws IgniteException {
+    public long[] getNextExecutionTimes(IgniteCronTrigger cron, int cnt, long start) throws IgniteException {
         long[] times = new long[cnt];
 
         try {
-            CronSequenceGenerator cronExpr = new CronSequenceGenerator(cron.getCron());
+            CronSequenceGenerator cronExpr = new CronSequenceGenerator(cron.cronTrigger().getExpression());
 
             Date date = new Date(start);
 

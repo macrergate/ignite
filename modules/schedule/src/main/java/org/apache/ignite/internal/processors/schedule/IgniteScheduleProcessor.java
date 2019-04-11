@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import org.apache.ignite.internal.GridKernalContext;
+import org.apache.ignite.internal.processors.GridProcessorAdapter;
 import org.apache.ignite.internal.util.GridConcurrentHashSet;
 import org.apache.ignite.internal.util.typedef.X;
 import org.apache.ignite.lang.IgniteCallable;
@@ -32,7 +33,7 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Schedules cron-based execution of grid tasks and closures.
  */
-public class IgniteScheduleProcessor extends IgniteScheduleProcessorAdapter {
+public class IgniteScheduleProcessor extends GridProcessorAdapter implements IgniteScheduleProcessorAdapter {
     /** Spring scheduler. */
     private SpringScheduler sched;
 

@@ -24,13 +24,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.IgniteException;
 import org.apache.ignite.IgniteInterruptedException;
 import org.apache.ignite.IgniteLogger;
 import org.apache.ignite.internal.GridKernalContext;
+import org.apache.ignite.internal.processors.schedule.spring.IgniteCronTrigger;
 import org.apache.ignite.internal.processors.timeout.GridTimeoutObjectAdapter;
 import org.apache.ignite.internal.util.future.AsyncFutureListener;
 import org.apache.ignite.internal.util.future.GridFutureAdapter;
@@ -67,14 +65,8 @@ class ScheduleFutureImpl<R> implements SchedulerFuture<R> {
     /** Scheduling pattern. */
     private String pat;
 
-    /** Scheduling delay in seconds parsed from pattern. */
-    private int delay;
-
-    /** Number of maximum task calls parsed from pattern. */
-    private int maxCalls;
-
-    /** Mere cron pattern parsed from extended pattern. */
-    private CronExpression cron;
+    /** Parsed extended pattern. */
+    private IgniteCronTrigger expr;
 
     /** Cancelled flag. */
     private boolean cancelled;
@@ -141,7 +133,7 @@ class ScheduleFutureImpl<R> implements SchedulerFuture<R> {
                     return null;
                 }
 
-                if (callCnt == maxCalls && maxCalls > 0)
+                if (callCnt == expr.maxCalls())
                     return null;
 
                 callCnt++;
@@ -202,9 +194,9 @@ class ScheduleFutureImpl<R> implements SchedulerFuture<R> {
         log = ctx.log(getClass());
 
         try {
-            parsePatternParameters();
+            expr = IgniteCronTrigger.valueOf(pat);
         }
-        catch (IgniteCheckedException e) {
+        catch (IgniteException e) {
             onEnd(resLatch, null, e, true);
         }
     }
@@ -245,7 +237,7 @@ class ScheduleFutureImpl<R> implements SchedulerFuture<R> {
                     }
                 }
 
-                if ((callCnt == maxCalls && maxCalls > 0) || cancelled || initErr) {
+                if ((callCnt == expr.maxCalls()) || cancelled || initErr) {
                     done = true;
 
                     resLatchCp = resLatch;
@@ -291,9 +283,9 @@ class ScheduleFutureImpl<R> implements SchedulerFuture<R> {
 
         ((IgniteScheduleProcessor)ctx.schedule()).onScheduled(this);
 
-        if (delay > 0) {
+        if (expr.delay() > 0) {
             // Schedule after delay.
-            ctx.timeout().addTimeoutObject(new GridTimeoutObjectAdapter(delay * 1000) {
+            ctx.timeout().addTimeoutObject(new GridTimeoutObjectAdapter(expr.delay() * 1000) {
                 @Override public void onTimeout() {
                     synchronized (mux) {
                         if (!cancelled)
@@ -313,7 +305,7 @@ class ScheduleFutureImpl<R> implements SchedulerFuture<R> {
         assert id == null;
 
         try {
-            id = sched.schedule(cron, run);
+            id = sched.schedule(expr, run);
 
             scheduled.set(true);
         }
@@ -331,65 +323,6 @@ class ScheduleFutureImpl<R> implements SchedulerFuture<R> {
 
             ((IgniteScheduleProcessor)ctx.schedule()).onDescheduled(this);
         }
-    }
-
-    /**
-     * Parse delay, number of task calls and mere cron expression from extended pattern
-     *  that looks like  "{n1,n2} * * * * *".
-     * @throws IgniteCheckedException Thrown if pattern is invalid.
-     */
-    private void parsePatternParameters() throws IgniteCheckedException {
-        assert pat != null;
-
-        String regEx = "(\\{(\\*|\\d+),\\s*(\\*|\\d+)\\})?(.*)";
-
-        Matcher matcher = Pattern.compile(regEx).matcher(pat.trim());
-
-        if (matcher.matches()) {
-            String delayStr = matcher.group(2);
-
-            if (delayStr != null)
-                if ("*".equals(delayStr))
-                    delay = 0;
-                else
-                    try {
-                        delay = Integer.valueOf(delayStr);
-                    }
-                    catch (NumberFormatException e) {
-                        throw new IgniteCheckedException("Invalid delay parameter in schedule pattern [delay=" +
-                            delayStr + ", pattern=" + pat + ']', e);
-                    }
-
-            String numOfCallsStr = matcher.group(3);
-
-            if (numOfCallsStr != null) {
-                int maxCalls0;
-
-                if ("*".equals(numOfCallsStr))
-                    maxCalls0 = 0;
-                else {
-                    try {
-                        maxCalls0 = Integer.valueOf(numOfCallsStr);
-                    }
-                    catch (NumberFormatException e) {
-                        throw new IgniteCheckedException("Invalid number of calls parameter in schedule pattern [numOfCalls=" +
-                            numOfCallsStr + ", pattern=" + pat + ']', e);
-                    }
-
-                    if (maxCalls0 <= 0)
-                        throw new IgniteCheckedException("Number of calls must be greater than 0 or must be equal to \"*\"" +
-                            " in schedule pattern [numOfCalls=" + maxCalls0 + ", pattern=" + pat + ']');
-                }
-
-                synchronized (mux) {
-                    maxCalls = maxCalls0;
-                }
-            }
-
-            cron = new CronExpression(matcher.group(4));
-        }
-        else
-            throw new IgniteCheckedException("Invalid schedule pattern: " + pat);
     }
 
     /** {@inheritDoc} */
@@ -411,14 +344,14 @@ class ScheduleFutureImpl<R> implements SchedulerFuture<R> {
             return EMPTY_TIMES;
 
         synchronized (mux) {
-            if (maxCalls > 0)
-                cnt = Math.min(cnt, maxCalls);
+            if (expr.maxCalls() > 0)
+                cnt = Math.min(cnt, expr.maxCalls());
         }
 
-        if (start < createTime() + delay * 1000)
-            start = createTime() + delay * 1000;
+        if (start < createTime() + expr.delay() * 1000)
+            start = createTime() + expr.delay() * 1000;
 
-        return sched.getNextExecutionTimes(cron, cnt, start);
+        return sched.getNextExecutionTimes(expr, cnt, start);
     }
 
     /** {@inheritDoc} */

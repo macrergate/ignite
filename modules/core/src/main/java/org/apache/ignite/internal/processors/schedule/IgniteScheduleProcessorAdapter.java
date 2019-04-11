@@ -18,21 +18,13 @@
 package org.apache.ignite.internal.processors.schedule;
 
 import java.util.concurrent.Callable;
-import org.apache.ignite.internal.GridKernalContext;
-import org.apache.ignite.internal.processors.GridProcessorAdapter;
 import org.apache.ignite.scheduler.SchedulerFuture;
 
 /**
  * Schedules cron-based execution of grid tasks and closures. Abstract class was introduced to
  * avoid mandatory runtime dependency on cron library.
  */
-public abstract class IgniteScheduleProcessorAdapter extends GridProcessorAdapter {
-    /**
-     * @param ctx Kernal context.
-     */
-    protected IgniteScheduleProcessorAdapter(GridKernalContext ctx) {
-        super(ctx);
-    }
+public interface IgniteScheduleProcessorAdapter {
 
     /**
      * @param c Closure to schedule to run as a background cron-based job.

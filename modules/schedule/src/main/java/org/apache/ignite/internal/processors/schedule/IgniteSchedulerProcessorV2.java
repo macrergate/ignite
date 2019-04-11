@@ -18,37 +18,33 @@
 package org.apache.ignite.internal.processors.schedule;
 
 import java.util.concurrent.Callable;
-import org.apache.ignite.IgniteException;
 import org.apache.ignite.internal.GridKernalContext;
 import org.apache.ignite.internal.processors.GridProcessorAdapter;
+import org.apache.ignite.internal.processors.schedule.spring.IgniteSpringSchedulerV2;
 import org.apache.ignite.scheduler.SchedulerFuture;
 
-/**
- * No-op implementation of {@link IgniteScheduleProcessorAdapter}, throws exception on usage attempt.
- */
-public class IgniteNoopScheduleProcessor extends GridProcessorAdapter implements IgniteScheduleProcessorAdapter {
+public class IgniteSchedulerProcessorV2 extends GridProcessorAdapter implements IgniteScheduleProcessorAdapter {
+
+    private final IgniteSpringSchedulerV2 delegate;
+
     /**
      * @param ctx Kernal context.
      */
-    public IgniteNoopScheduleProcessor(GridKernalContext ctx) {
+    protected IgniteSchedulerProcessorV2(GridKernalContext ctx) {
         super(ctx);
+
+        delegate = new IgniteSpringSchedulerV2();
     }
 
-    /** {@inheritDoc} */
     @Override public SchedulerFuture<?> schedule(Runnable c, String pattern) {
-        throw processorException();
+        return delegate.schedule(() -> {
+                c.run();
+
+                return null;
+            }, pattern);
     }
 
-    /** {@inheritDoc} */
     @Override public <R> SchedulerFuture<R> schedule(Callable<R> c, String pattern) {
-        throw processorException();
-    }
-
-    /**
-     * @return No-op processor usage exception;
-     */
-    private IgniteException processorException() {
-        return new IgniteException("Current Ignite configuration does not support schedule functionality " +
-            "(consider adding ignite-schedule module to classpath).");
+        return delegate.schedule(c, pattern);
     }
 }
