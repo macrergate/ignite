@@ -16,11 +16,15 @@
  */
 package org.apache.ignite.internal.processors.cache.binary;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.binary.BinaryObject;
@@ -74,6 +78,9 @@ public class GridCacheBinaryObjectMetadataExchangeMultinodeTest extends GridComm
 
     /** */
     private static final AtomicInteger metadataReqsCounter = new AtomicInteger(0);
+
+    private Integer myTypeId = MyType.class.getName().toLowerCase().hashCode();
+    private List<Integer> bynaryTypeIds = Arrays.asList(BINARY_TYPE_ID, myTypeId);
 
     /** {@inheritDoc} */
     @Override protected IgniteConfiguration getConfiguration(String gridName) throws Exception {
@@ -245,6 +252,49 @@ public class GridCacheBinaryObjectMetadataExchangeMultinodeTest extends GridComm
         assertEquals(((BinaryObject)ignite1.cache(DEFAULT_CACHE_NAME).withKeepBinary().get(2)).field(strFieldName), "str");
     }
 
+    @Test
+    public void testClientRequestsUpToDateMetadataOnJobResponse() throws Exception {
+        final IgniteEx ignite0 = startGrid(0);
+
+        final IgniteEx ignite1 = startGrid(1);
+
+        final Ignite client = startDeafClient("client");
+
+        ClusterGroup srvGrp = client.cluster().forServers();
+
+        final String strVal = "strVal101";
+
+        int jobsCnt = client.configuration().getSystemThreadPoolSize();
+
+        List<IgniteCallable<MyType>> jobs = Collections.nCopies(jobsCnt, new IgniteCallable<MyType>() {
+            @Override public MyType call() throws Exception {
+                MyType res = new MyType();
+
+                res.str = strVal;
+
+                U.sleep(1_000);
+
+                return res;
+            }
+        });
+
+        List<IgniteFuture<MyType>> tasks = jobs.stream()
+            .map(job -> client.compute(srvGrp).callAsync(job))
+            .collect(Collectors.toList());
+
+        List<MyType> result = tasks.stream()
+            .map(IgniteFuture::get)
+            .collect(Collectors.toList());
+
+        assertEquals(jobsCnt, result.size());
+
+        assertEquals(strVal, result.get(0).str);
+    }
+
+    class MyType {
+        String str;
+    }
+    
     /**
      * Verifies that client is able to detect obsolete metadata situation and request up-to-date from the cluster.
      */
@@ -328,11 +378,11 @@ public class GridCacheBinaryObjectMetadataExchangeMultinodeTest extends GridComm
                         : (DiscoveryCustomMessage) IgniteUtils.field(msg, "delegate");
 
                 if (customMsg instanceof MetadataUpdateProposedMessage) {
-                    if (((MetadataUpdateProposedMessage) customMsg).typeId() == BINARY_TYPE_ID)
+                    if (bynaryTypeIds.contains(((MetadataUpdateProposedMessage)customMsg).typeId()))
                         GridTestUtils.setFieldValue(customMsg, "typeId", 1);
                 }
                 else if (customMsg instanceof MetadataUpdateAcceptedMessage) {
-                    if (((MetadataUpdateAcceptedMessage) customMsg).typeId() == BINARY_TYPE_ID)
+                    if (bynaryTypeIds.contains(((MetadataUpdateAcceptedMessage) customMsg).typeId()))
                         GridTestUtils.setFieldValue(customMsg, "typeId", 1);
                 }
             }
